@@ -26,10 +26,32 @@
 </head>
 <body class="bg-slate-950 text-slate-100">
 
-    <!-- MODAL PANTALLA COMPLETA (LIGHTBOX) CON Z-INDEX MÁXIMO PARA QUE QUEDE ENCIMA DE TODO -->
-    <div id="imageModal" class="fixed inset-0 overflow-y-auto z-[99999] hidden flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4" onclick="cerrarFullscreen()">
-        <span class="absolute top-5 right-6 text-slate-400 hover:text-white text-4xl cursor-pointer">&times;</span>
-        <img id="modalImg" src="" class="max-w-[95%] max-h-[90vh] object-contain rounded-2xl shadow-2xl" alt="Vista ampliada">
+    <!-- MODAL PANTALLA COMPLETA PROFESIONAL (FLECHAS + MINIATURAS) -->
+    <div id="imageModal" class="fixed inset-0 z-[99999] hidden bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6" onclick="evaluarCierreModal(event)">
+        <!-- BARRA SUPERIOR: CONTADOR Y BOTÓN CERRAR -->
+        <div class="flex justify-between items-center z-10">
+            <span id="modal-counter" class="text-xs font-bold text-emerald-400 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">1 / 1</span>
+            <button onclick="cerrarFullscreen()" class="text-slate-400 hover:text-white text-3xl w-10 h-10 rounded-full bg-slate-900/80 border border-slate-800 flex items-center justify-center transition">&times;</button>
+        </div>
+
+        <!-- CONTENEDOR CENTRAL: IMAGEN + FLECHAS DE NAVEGACIÓN -->
+        <div class="relative flex-1 flex items-center justify-center my-2 select-none overflow-hidden">
+            <!-- FLECHA IZQUIERDA -->
+            <button id="btn-prev-fullscreen" onclick="navegarFullscreen(-1)" class="absolute left-2 sm:left-4 z-20 bg-slate-900/80 hover:bg-emerald-600 text-white w-12 h-12 rounded-full border border-slate-700 hover:border-emerald-500 flex items-center justify-center text-xl shadow-2xl transition">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+
+            <!-- IMAGEN PRINCIPAL -->
+            <img id="modalImg" src="" class="max-w-[92%] max-h-[75vh] object-contain rounded-2xl shadow-2xl transition-all duration-200" alt="Vista ampliada">
+
+            <!-- FLECHA DERECHA -->
+            <button id="btn-next-fullscreen" onclick="navegarFullscreen(1)" class="absolute right-2 sm:right-4 z-20 bg-slate-900/80 hover:bg-emerald-600 text-white w-12 h-12 rounded-full border border-slate-700 hover:border-emerald-500 flex items-center justify-center text-xl shadow-2xl transition">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+
+        <!-- BARRA INFERIOR: TIRA DE MINIATURAS -->
+        <div id="modal-thumbs-bar" class="flex justify-center gap-2 overflow-x-auto py-2 z-10 max-w-xl mx-auto w-full"></div>
     </div>
 
     <!-- HEADER / NAVEGACIÓN -->
@@ -203,9 +225,23 @@
         let isAdmin = false;
         let urlsFotosActualesEdit = [];
 
+        // VARIABLES PARA NAVEGACIÓN EN FULLSCREEN
+        let fotosFullscreen = [];
+        let indexFotoFullscreen = 0;
+
         window.onload = function() {
             cargarLogoGuardado();
             cargarProductos();
+            
+            // Atajos de teclado para navegar con las flechas
+            document.addEventListener('keydown', function(e) {
+                const modal = document.getElementById('imageModal');
+                if (!modal.classList.contains('hidden')) {
+                    if (e.key === 'ArrowLeft') navegarFullscreen(-1);
+                    if (e.key === 'ArrowRight') navegarFullscreen(1);
+                    if (e.key === 'Escape') cerrarFullscreen();
+                }
+            });
         }
 
         function cargarLogoGuardado() {
@@ -363,15 +399,17 @@
 
             contenido.innerHTML = `
                 <div class="space-y-4">
-                    <div class="relative h-72 sm:h-96 bg-slate-950 rounded-2xl overflow-hidden shadow-inner border border-slate-800 flex items-center justify-center cursor-zoom-in" onclick="abrirFullscreen('${urls[0]}')">
+                    <div class="relative h-72 sm:h-96 bg-slate-950 rounded-2xl overflow-hidden shadow-inner border border-slate-800 flex items-center justify-center cursor-zoom-in" onclick="abrirFullscreenIndex(0, ${index})">
                         <img id="img-principal-detalle" src="${urls[0]}" class="w-full h-full img-contain-box">
-                        <span class="absolute bottom-3 right-3 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-1 rounded-lg pointer-events-none">🔍 CLIC PARA AMPLIAR</span>
+                        <span class="absolute bottom-3 right-3 bg-slate-900/80 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg border border-slate-800 pointer-events-none flex items-center gap-1">
+                            <i class="fa-solid fa-expand text-emerald-400"></i> AMPLIAR FOTO
+                        </span>
                     </div>
 
                     ${urls.length > 1 ? `
                         <div class="flex gap-2 overflow-x-auto pb-2">
-                            ${urls.map((url) => `
-                                <button onclick="cambiarFoto('${url}')" class="w-16 h-16 rounded-xl overflow-hidden border-2 border-slate-800 hover:border-emerald-500 transition flex-shrink-0 focus:outline-none bg-slate-950 flex items-center justify-center">
+                            ${urls.map((url, i) => `
+                                <button onclick="cambiarFoto('${url}', ${i}, ${index})" class="w-16 h-16 rounded-xl overflow-hidden border-2 border-slate-800 hover:border-emerald-500 transition flex-shrink-0 focus:outline-none bg-slate-950 flex items-center justify-center">
                                     <img src="${url}" class="w-full h-full img-contain-box">
                                 </button>
                             `).join('')}
@@ -393,16 +431,71 @@
             modal.classList.remove('hidden');
         }
 
-        function cambiarFoto(url) {
+        function cambiarFoto(url, idxFoto, idxProducto) {
             const imgMain = document.getElementById('img-principal-detalle');
             imgMain.src = url;
             const container = imgMain.parentElement;
-            container.setAttribute('onclick', `abrirFullscreen('${url}')`);
+            container.setAttribute('onclick', `abrirFullscreenIndex(${idxFoto}, ${idxProducto})`);
         }
 
-        function abrirFullscreen(url) {
-            document.getElementById('modalImg').src = url;
+        // ABRIR VISOR EN PANTALLA COMPLETA
+        function abrirFullscreenIndex(idxFoto, idxProducto) {
+            const p = productos[idxProducto];
+            fotosFullscreen = String(p.imagen_url || "").split(",").map(u => u.trim()).filter(Boolean);
+            if (fotosFullscreen.length === 0) fotosFullscreen = ['https://via.placeholder.com/400'];
+            
+            indexFotoFullscreen = idxFoto;
+            renderizarVistaFullscreen();
             document.getElementById('imageModal').classList.remove('hidden');
+        }
+
+        function renderizarVistaFullscreen() {
+            const modalImg = document.getElementById('modalImg');
+            const counter = document.getElementById('modal-counter');
+            const thumbsBar = document.getElementById('modal-thumbs-bar');
+            const btnPrev = document.getElementById('btn-prev-fullscreen');
+            const btnNext = document.getElementById('btn-next-fullscreen');
+
+            modalImg.src = fotosFullscreen[indexFotoFullscreen];
+            counter.innerText = `${indexFotoFullscreen + 1} / ${fotosFullscreen.length}`;
+
+            // Ocultar/Mostrar flechas si solo hay 1 foto
+            if (fotosFullscreen.length <= 1) {
+                btnPrev.classList.add('hidden');
+                btnNext.classList.add('hidden');
+            } else {
+                btnPrev.classList.remove('hidden');
+                btnNext.classList.remove('hidden');
+            }
+
+            // Renderizar tira de miniaturas abajo
+            if (fotosFullscreen.length > 1) {
+                thumbsBar.innerHTML = fotosFullscreen.map((src, idx) => `
+                    <button onclick="seleccionarFotoFullscreen(${idx})" class="w-14 h-14 rounded-xl overflow-hidden border-2 transition flex-shrink-0 bg-slate-950 ${idx === indexFotoFullscreen ? 'border-emerald-500 scale-105 shadow-lg shadow-emerald-500/20' : 'border-slate-800 opacity-60 hover:opacity-100'}">
+                        <img src="${src}" class="w-full h-full img-contain-box">
+                    </button>
+                `).join('');
+            } else {
+                thumbsBar.innerHTML = '';
+            }
+        }
+
+        function navegarFullscreen(direccion) {
+            indexFotoFullscreen += direccion;
+            if (indexFotoFullscreen < 0) indexFotoFullscreen = fotosFullscreen.length - 1;
+            if (indexFotoFullscreen >= fotosFullscreen.length) indexFotoFullscreen = 0;
+            renderizarVistaFullscreen();
+        }
+
+        function seleccionarFotoFullscreen(idx) {
+            indexFotoFullscreen = idx;
+            renderizarVistaFullscreen();
+        }
+
+        function evaluarCierreModal(e) {
+            if (e.target.id === 'imageModal') {
+                cerrarFullscreen();
+            }
         }
 
         function cerrarFullscreen() {
@@ -565,7 +658,7 @@
             const previewContainer = document.getElementById('preview-nuevas-fotos');
             previewContainer.innerHTML = '';
             if (input.files) {
-                Array.from(input.files).forEach((file, idx) => {
+                Array.from(input.files).forEach((file) => {
                     const reader = new FileReader();
                     reader.onload = function(e) {
                         previewContainer.innerHTML += `
